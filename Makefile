@@ -24,7 +24,7 @@ endif
 # Debug:
 #CFLAGS=-pedantic -W -Wextra -Wall -Wno-variadic-macros -Wno-strict-aliasing -Wno-long-long -Wno-unused-parameter -fPIC -D_STDC_FORMAT_MACROS -Wno-system-headers -isystem -g -ggdb3  -D_STDC_LIMIT_MACROS
 CFLAGS=-W -Wextra -Wall -Wno-unused-parameter -Wno-variadic-macros -Wno-strict-aliasing -Wno-long-long -Wno-unused -fPIC -D_STDC_FORMAT_MACROS -Wno-system-headers -isystem -O3 -g -DNDEBUG -D_STDC_LIMIT_MACROS
-INC=-I. -DPROJECT_ROOT="\"$(SCIDB)\"" -I"$(SCIDB_THIRDPARTY_PREFIX)/3rdparty/boost/include/" -I"$(SCIDB)/include"
+INC=-I. -DPROJECT_ROOT="\"$(SCIDB)\"" -I"$(SCIDB_THIRDPARTY_PREFIX)/3rdparty/boost/include/" -I"$(SCIDB)/include" -I./extern
 LIBS=-shared -Wl,-soname,libvariable_residency.so -L. -L"$(SCIDB_THIRDPARTY_PREFIX)/3rdparty/boost/lib" -L"$(SCIDB)/lib" -Wl,-rpath,$(SCIDB)/lib:$(RPATH) -lm
 
 SRCS=plugin.cpp 
@@ -33,13 +33,13 @@ ifneq ("$(wildcard /usr/bin/g++-4.9)","")
   CC := "/usr/bin/gcc-4.9"a
   CXX := "/usr/bin/g++-4.9"
   CFLAGS+=-std=c++11 -DCPP11
-  SRCS+= LogicalStoreToInstances.cpp PhysicalStoreToInstances.cpp LogicalCreateWithResidency.cpp PhysicalCreateWithResidency.cpp
+  SRCS+= LogicalCreateWithResidency.cpp PhysicalCreateWithResidency.cpp
 else
   ifneq ("$(wildcard /opt/rh/devtoolset-3/root/usr/bin/gcc)","")
    CC := "/opt/rh/devtoolset-3/root/usr/bin/gcc"
    CXX := "/opt/rh/devtoolset-3/root/usr/bin/g++"
    CFLAGS+=-std=c++11 -DCPP11
-   SRCS+= LogicalStoreToInstances.cpp PhysicalStoreToInstances.cpp LogicalCreateWithResidency.cpp PhysicalCreateWithResidency.cpp
+   SRCS+= LogicalCreateWithResidency.cpp PhysicalCreateWithResidency.cpp
   endif
 endif
 
