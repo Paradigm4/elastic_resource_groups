@@ -27,6 +27,7 @@
 #include <query/Operator.h>
 #include <set>
 #include <usr_namespace/Permissions.h>
+#include <NamespacesCommunicatorCopy.h>
 
 #define fail(e) throw USER_EXCEPTION(SCIDB_SE_INFER_SCHEMA,e)
 
@@ -75,17 +76,23 @@ public:
     {
         assert(param<OperatorParam>(0)->getParamType() == PARAM_ARRAY_REF);
         assert(param<OperatorParam>(1)->getParamType() == PARAM_SCHEMA);
-        string const& objName = param<OperatorParamArrayReference>(0)->getObjectName();
-        string arrayName, nsName;
-        ArrayDesc::splitQualifiedArrayName(objName, nsName, arrayName);
-        if (nsName.empty())
+
+        string arrayNameOrg(param<OperatorParamArrayReference>(0)->getObjectName());
+
+        std::string arrayName;
+        std::string namespaceName;
+        query->getNamespaceArrayNames(arrayNameOrg, namespaceName, arrayName);
+
+        try
         {
-            nsName = query->getNamespaceName();
+            scidb::namespaces::Communicator::checkArrayAccess(namespaceName, arrayName);
+        } catch(scidb::SystemException& e) {
+            if(e.getLongErrorCode() != SCIDB_LE_ARRAY_DOESNT_EXIST)
+            {
+                throw;
+            }
         }
-        if (SystemCatalog::getInstance()->containsArray(nsName, arrayName))
-        {
-            fail(SCIDB_LE_ARRAY_ALREADY_EXIST) << ArrayDesc::makeQualifiedArrayName(nsName, arrayName);
-        }
+
         set<InstanceID> instances;
         for (size_t i = 3, n =_parameters.size(); i<n; ++i)
         {

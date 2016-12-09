@@ -30,6 +30,7 @@
 #include <log4cxx/logger.h>
 #include <array/TransientCache.h>
 #include <util/session/Session.h>
+#include <NamespacesCommunicatorCopy.h>
 
 using namespace std;
 
@@ -49,26 +50,27 @@ public:
     std::shared_ptr<t>& param(size_t i) const
     {
         assert(i < _parameters.size());
-
         return (std::shared_ptr<t>&)_parameters[i];
     }
 
     virtual std::shared_ptr<Array> execute(vector<shared_ptr<Array> >& in,shared_ptr<Query> query)
     {
         bool const temp( param<OperatorParamPhysicalExpression>(2)-> getExpression()->evaluate().getBool());
+        if (temp)                                        // 'temp' flag given?
+        {
+            throw SYSTEM_EXCEPTION(SCIDB_SE_INTERNAL, SCIDB_LE_ILLEGAL_OPERATION) << "temp arrays cannot be created with a specific residency in 15.12";
+        }
         if (query->isCoordinator())
         {
-            string const& objName = param<OperatorParamArrayReference>(0)->getObjectName();
+            string arrayNameOrg(param<OperatorParamArrayReference>(0)->getObjectName());
             std::string arrayName;
             std::string namespaceName;
-            query->getNamespaceArrayNames(objName, namespaceName, arrayName);
-            SCIDB_ASSERT(ArrayDesc::isNameUnversioned(arrayName));
+            query->getNamespaceArrayNames(arrayNameOrg, namespaceName, arrayName);
             ArrayDesc arrSchema(param<OperatorParamSchema>(1)->getSchema());
+            assert(ArrayDesc::isNameUnversioned(arrayName));
             arrSchema.setName(arrayName);
             arrSchema.setNamespaceName(namespaceName);
             arrSchema.setTransient(temp);
-            /* Give our subclass a chance to compute missing dimension details
-            such as a wild-carded chunk interval, for example...*/
             const size_t redundancy = Config::getInstance()->getOption<size_t> (CONFIG_REDUNDANCY);
             arrSchema.setDistribution(defaultPartitioning(redundancy));
             arrSchema.setResidency(_schema.getResidency());
@@ -82,17 +84,13 @@ public:
         if (temp)                                        // 'temp' flag given?
         {
             syncBarrier(0,query);                        // Workers wait here
-            string const& arrayName = param<OperatorParamArrayReference>(0)->getObjectName();
-            // XXX TODO: this needs to change to eliminate worker catalog access
+            string arrayNameOrg(param<OperatorParamArrayReference>(0)->getObjectName());
+            std::string arrayName;
+            std::string namespaceName;
+            query->getNamespaceArrayNames(arrayNameOrg, namespaceName, arrayName);
             ArrayDesc arrSchema;
-            SystemCatalog::GetArrayDescArgs args;
-            args.result = &arrSchema;
-            ArrayDesc::splitQualifiedArrayName(arrayName, args.nsName, args.arrayName);
-            if (args.nsName.empty()) {
-                args.nsName = query->getNamespaceName();
-            }
-            args.throwIfNotFound = true;
-            SystemCatalog::getInstance()->getArrayDesc(args);
+            scidb::namespaces::Communicator::getArrayDesc(
+                namespaceName, arrayName,SystemCatalog::ANY_VERSION,arrSchema);
             transient::record(make_shared<MemArray>(arrSchema,query));
         }
         return std::shared_ptr<Array>();
