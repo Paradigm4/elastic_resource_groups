@@ -13,7 +13,7 @@ The elasticity feature in the Enterprise Edition allows us to do even more inter
 4. save the computation result onto the original K instances
 5. detach the "compute" instances and return to the original K
 
-This is particularly attractive in cloud environments: compute nodes can be rented on an hourly basis, only for when they are needed, then discarded. That's how cloud costs become more attractive than in-house storage. This also implies that any SciDB cluster can be made to 'grow' or 'shrink' as demand changes.
+This is particularly attractive in cloud environments: compute nodes can be rented on an hourly basis, only for when they are needed, then discarded. __That's how cloud costs become more attractive than in-house storage.__ This also implies that any SciDB cluster can be made to 'grow' or 'shrink' as demand changes.
 
 This repository contains a small plugin `variable_residency` with a single operator `create_with_residency`. We first discuss the operator, then show an example 'grow, compute, shrink' workflow that is possible with SciDB Enterprise Edition.
 
