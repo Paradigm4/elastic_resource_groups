@@ -56,10 +56,6 @@ public:
     virtual std::shared_ptr<Array> execute(vector<shared_ptr<Array> >& in,shared_ptr<Query> query)
     {
         bool const temp( param<OperatorParamPhysicalExpression>(2)-> getExpression()->evaluate().getBool());
-        if (temp)                                        // 'temp' flag given?
-        {
-            throw SYSTEM_EXCEPTION(SCIDB_SE_INTERNAL, SCIDB_LE_ILLEGAL_OPERATION) << "temp arrays cannot be created with a specific residency in 15.12";
-        }
         if (query->isCoordinator())
         {
             string arrayNameOrg(param<OperatorParamArrayReference>(0)->getObjectName());
