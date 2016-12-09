@@ -335,14 +335,14 @@ sys     0m0.004s
 Quite elastic, in this case. Once again - this grouped aggregate is just an example, consider a more intensive computation that might take hours. 
 
 Did we need to create the temp array copy? Not at all. But we do need to ensure all instances participate in the work, though the array is stored only on 16. Another way to ensure that is to explicitly `redistribute` with the data with the `_sg` or "scatter-gather" operator the start of the query:
-```
+```bash
 iquery -aq "grouped_aggregate( _sg(test_array_shuffle, 1),.. )"
 ```
 Where the `1` argument to `_sg` means "redistribute-by-hash". 
 
 ## 2.5 Save the result
 Knowing the second node won't be around forever, we can save the result with a residency on the first node only. This is where our new operator actually becomes crucial:
-```
+```bash
 $ iquery -aq "create_with_residency(agg_result, <val:double, count:uint64> [instance_id, value_no], false, 0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15)"
 
 $ iquery -anq "store(grouped_aggregate(test_array_shuffle, count(*), val), agg_result)"
@@ -351,19 +351,19 @@ Query was executed successfully
 
 ## 2.6 Detach and remove the second node
 We perform the section 2.3 somewhat in reverse. First, remove any temp arrays
-```
+```bash
 $ iquery -aq "remove(test_array_shuffle)"
 ```
 Then, kill the instance processes:
-```
+```bash
 $ scidb.py -m p4_system stop_server -si 1 mydb new_config.ini
 ```
 Now it may again take 1-2 minutes for the cluster to recognize that the processes went unavailable. After the node's departure is recognized you will be able to successfully run this:
-```
+```bash
 iquery -aq "remove_instances(4294967312, 4294967313, 4294967314, 4294967315, 4294967316, 4294967317, 4294967318, 4294967319, 4294967320, 4294967321, 4294967322, 4294967323, 4294967324, 4294967325, 4294967326, 4294967327)"
 ```
 Finally, if you don't plan on re-launching this specific node in the future, you can de-register the instances from Postgres. Unfortunately there is a known issue with this step. You need to manually edit `scidb.py` and replace all occurrences of `_pgHost` with `pgHost`. Then this command will finalize the removal:
-```
+```bash
 scidb.py -m p4_system config_server --remove config-add-delta.ini --output new_config2.ini mydb new_config.ini
 ```
 
@@ -371,7 +371,7 @@ After this, we retain a running 1-node SciDB, our `test_array` is intact and our
 
 ## 2.7 Keeping track of the config files
 Note that in step 2.3 we created a new config.ini when we added a server and in 2.6 we created yet another config.ini file without the server again! If you plan to change the cluster state for the long term, it is recommended you register SciDB as a service with these config files:
-```
+```bash
 $ scidb.py -m p4_system service_unregister --all mydb <old_config.ini>
 $ scidb.py -m p4_system service_register --all mydb <new_config.ini> 
 ```
