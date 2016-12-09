@@ -15,13 +15,13 @@ The elasticity feature in the Enterprise Edition allows us to do even more inter
 
 This is particularly attractive in cloud environments: compute nodes can be rented on an hourly basis, only for when they are needed, then discarded. Cloud costs become a lot more attractive than in-house storage. This also implies that any SciDB cluster can be made to 'grow' or 'shrink' as demand changes.
 
-This repository contains a small plugin `variable_residency` with a single operator `create_with_residency`. We first discuss the operator, then show an example 'grow, compute, shrink' workflow that EE enables.
+This repository contains a small plugin `variable_residency` with a single operator `create_with_residency`. We first discuss the operator, then show an example 'grow, compute, shrink' workflow that is possible with SciDB Enterprise Edition.
 
 # 1. Operator create_with_residency
 
 The plugin installs using [dev_tools](https://github.com/paradigm4/dev_tools) for 15.12 and 16.9. Make sure you use the `v15.12` branch for 15.12
 
-`create_with_residency` is a slightly modified `create_array` that allows the user to specify a set of instances. The syntax is as follows:
+`create_with_residency` is a modified `create array` that allows the user to specify a set of instances. The syntax is as follows:
 `create_with_residency( ARRAY_NAME, SCHEMA, TEMP, INSTANCE0 [, INSTANCE1 [, INSTANCE2,...])` where
 
 * `ARRAY_NAME` and `SCHEMA` are just as in `create_array`
@@ -56,7 +56,7 @@ $ iquery -aq "summarize(foo, 'per_instance=1')"
 {7,0} 'all',0,0,0,null,null,null,null,null,null
 ...
 ```
-Compare that to a "regular" array with the same shape and data:
+Compare that to a regular array with the same shape and data:
 ```bash
 $ iquery -aq "create array bar <val:double>[x=1:40,10,0]"
 Query was executed successfully
@@ -77,7 +77,7 @@ $ iquery -aq "summarize(bar, 'per_instance=1')"
 ...
 ```
 
-Most importantly, even though the two arrays differ in residency, the SciDB optimizer and/or specific operators are smart enough to redistribute the data when the arrays need to be used together in a query:
+Most importantly, even though the two arrays differ in residency, SciDB is smart enough to redistribute the data when the arrays need to be colocated for a query:
 ```bash
 $ iquery -aq "join(foo,bar)"
 {x} val,val
@@ -95,7 +95,7 @@ $ iquery -aq "join(foo,bar)"
 
 ## Residency Lifetime
 
-At the moment, the residency is associated with an array name at creation time and cannot be mutated. Thus, storing or inserting something into `foo` will not change its residency:
+At the moment, the residency is associated with an array name at creation time and cannot be mutated. Thus, storing or inserting something into `foo` will not alter its residency:
 ```bash
 $ iquery -aq "insert(project(apply(between(bar, 1,3), val2, val*10), val2), foo)"
 {x} val
@@ -123,7 +123,7 @@ $ iquery -aq "summarize(foo, 'per_instance=1')"
 ...
 ```
 
-Similarly, storing `foo` into a new array requires creating a new array with default residency:
+Similarly, storing `foo` into a new array means creating a new array with default residency:
 ```bash
 $ iquery -naq "store(foo, foo2)"
 Query was executed successfully
@@ -145,17 +145,17 @@ This implies that all arrays with non-default residency must be created first, b
 
 ## Redundancy
 
-If SciDB replication is enabled, 
+If SciDB replication is enabled, the residency supplied to `create_with_residency` must exceed the `redundancy` setting: at least two instances for `redundancy=1`. And since 16.9 makes redundancy machine-level, the instances need to be on different machines.
 
-# 2. The grow, compute, shrink workflow
+# 2. The grow, compute, shrink workflow (EE only, 15.12 and 16.9)
 
-These steps require the P4 Enterprise Edition:
+These steps require the P4 Enterprise Edition, the `system` library in particular:
 ```bash
 $ iquery -aq "load_library('system')"
 Query was executed successfully
 ```
 
-For the sake of the example, we perform the following steps:
+In this example, we perform the following steps:
 
  1. start with 1 node, 16 instances
  2. create a test dataset and show a sample query on it
@@ -168,7 +168,7 @@ The example is quite simple on purpose. In practice, you can attach more than on
  
 ## 2.1 Test Data and Query
 
-What we really have in mind is an complex workflow, perhaps a monte-carlo simulation driven by [stream](https://github.com/Paradigm4/stream). But we'll use a very simple example for brevity. We create a vector of 600M numbers between 0 and 19:
+What we really have in mind is a complex workflow, perhaps a monte-carlo simulation driven by [stream](https://github.com/Paradigm4/stream). But we'll use a very simple example for brevity. We create a vector of 600M numbers between 0 and 19:
 ```bash
 $ iquery -anq "store(build(<val:double> [i=1:600000000,1000000,0], random()%20), test_array)"
 Query was executed successfully
@@ -215,10 +215,10 @@ Attaching another node takes at most 1-2 minutes. It may take some time at first
 Ports also to be open between the nodes: 
 
  * 5432 for Postgres 
- * 1239-... for SciDB instances
+ * 1239-... for SciDB instances (1239 + number of instances)
  * additional ports for linear algebra
  
-It might be best to place the nodes on a private network with all node-to-node ports open. Postgres may also need to be configured to allow and trust connections for remote IPs. Finally, the `config.ini` file for Node 1 must mention the exact IP or hostname - do not use `localhost` or `127.0.0.1` as that will confuse a two-node setup.
+It might be best to place the nodes on a private network with all node-to-node ports open. Postgres may also need to be configured to allow and trust connections for remote IPs. Finally, the `config.ini` file for the first node must use the exact IP or hostname - do not use `localhost` or `127.0.0.1` as that will confuse a two-node setup.
 
 ## 2.3 Attaching the second node
 We first create a "config.ini" delta file. It needs to contain the same installation name (`mydb` in our case), the IP address(es) of the new nodes and the desired number of instances per node, like so:
@@ -283,7 +283,7 @@ $ scidb.py -m p4_system start_server -si 1 mydb new_config.ini
 Note this step uses the `new_config.ini` we created in the previous step. The instances may encounter a hiccup on starting up as they are still not fully registered with the cluster. You can verify that the actual SciDB processes are now running on the second node.
 
 ### 2.3.3 Add the new instances to the cluster
-Finally we need to run this query for SciDB to add the newly launched processes to the `cluster membership`. We supply all the instance ids as shown in `list_instances()` above:
+Finally we need to run this query for SciDB to add the newly launched processes to the "cluster membership". Supply all the instance ids as shown in `list_instances()` above:
 ```bash
 $ iquery -aq "add_instances(4294967312, 4294967313, 4294967314, 4294967315, 4294967316, 4294967317, 4294967318, 4294967319, 4294967320, 4294967321, 4294967322, 4294967323, 4294967324, 4294967325, 4294967326, 4294967327)"
 ```
@@ -293,10 +293,10 @@ This step may take a minute or so for the instances to "say hello" and recognize
 ```bash
 $ iquery -aq "sync()"
 ``` 
-in a loop and wait for it to return success. That is how you know the cluster is operational. You can also corroborate with `list_instances()` to confirm that all 32 are now in a `member` state.
+in a loop and wait for it to return success. That is how you know the cluster is operational. You can also corroborate with `list_instances()` to confirm that all 32 are now in a `member` state. We are now good to go with a two-node cluster!
 
 ## 2.4 Run the computation on the expanded cluster
-We'll create a `temp` array `test_array_shuffle`. Note that now any array we create will have the 32-instance residency:
+Just because we added a node does not mean the data was moved in any way. Our `test_array` still resides only on the first node. You can easily confirm that with `summarize`. However, any _new_ array we create will have 32-instance residency. We can, for example, create a new `temp` array `test_array_shuffle`:
 ```bash
 $ iquery -aq "create temp array test_array_shuffle <val:double> [i=1:600000000:0:1000000]"
 Query was executed successfully
@@ -304,7 +304,7 @@ Query was executed successfully
 $ iquery -anq "store(test_array, test_array_shuffle)"
 Query was executed successfully
 ```
-Now `test_array_shuffle` is stored on all 32 instances and we can see our `grouped_aggregate` takes less time to compute:
+Now that `test_array_shuffle` lives on all 32 instances and we can see our `grouped_aggregate` takes less time to compute:
 ```bash
 $ time iquery -otsv -aq "grouped_aggregate(test_array_shuffle, count(*), val)"
 4       29989190
@@ -334,14 +334,14 @@ sys     0m0.004s
 ```
 Quite elastic, in this case. Once again - this grouped aggregate is just an example, consider a more intensive computation that might take hours. 
 
-Did we need to create the temp array copy? Not at all. But we do need to ensure all instances participate in the work and the array starts out only on the first 16. Another way to solve the problem is to explicitly `redistribute` with the data with the `_sg` or "scatter-gather" operator the start of the query:
+Did we need to create the temp array copy? Not at all. But we do need to ensure all instances participate in the work, though the array is stored only on 16. Another way to ensure that is to explicitly `redistribute` with the data with the `_sg` or "scatter-gather" operator the start of the query:
 ```
 iquery -aq "grouped_aggregate( _sg(test_array_shuffle, 1),.. )"
 ```
 Where the `1` argument to `_sg` means "redistribute-by-hash". 
 
 ## 2.5 Save the result
-Knowing the second node won't be around forever, we can save the result with a residency on the first node only. This is where our new operator actually comes in:
+Knowing the second node won't be around forever, we can save the result with a residency on the first node only. This is where our new operator actually becomes crucial:
 ```
 $ iquery -aq "create_with_residency(agg_result, <val:double, count:uint64> [instance_id, value_no], false, 0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15)"
 
@@ -367,8 +367,10 @@ Finally, if you don't plan on re-launching this specific node in the future, you
 scidb.py -m p4_system config_server --remove config-add-delta.ini --output new_config2.ini mydb new_config.ini
 ```
 
-## 2.7 Keep track of those config files
-Note that in step 2.3 we created a new config.ini when we added a server and in 2.6 we created yet another config.ini file without the server again. If you plan to change the cluster state for the long term, it is recommended you register SciDB as a service with these config files:
+After this, we retain a running 1-node SciDB, our `test_array` is intact and our `agg_result` is also available!
+
+## 2.7 Keeping track of the config files
+Note that in step 2.3 we created a new config.ini when we added a server and in 2.6 we created yet another config.ini file without the server again! If you plan to change the cluster state for the long term, it is recommended you register SciDB as a service with these config files:
 ```
 $ scidb.py -m p4_system service_unregister --all mydb <old_config.ini>
 $ scidb.py -m p4_system service_register --all mydb <new_config.ini> 
@@ -377,5 +379,5 @@ This has the effect of copying the supplied config.ini file to all nodes under `
 
 ## In Conclusion
 
-CE users can use this prototype to store arrays to specific locations in their cluster. EE users can grow and shrink their clusters in response to changes in demand. More fine-grained controls over array distributions schemes, such as special small arrays that are copied to every instance, and so on, are quite possible future extensions.
+CE users can use this prototype to store arrays to specific locations in their cluster. EE users can also grow and shrink their clusters, quickly or slowly, in response to changes in demand. More fine-grained controls over array distributions schemes, such as special small arrays that are copied to every instance, and so on, are quite possible future extensions.
 
