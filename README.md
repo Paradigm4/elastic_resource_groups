@@ -3,7 +3,7 @@ Prototypes and notes on Variable Array Residency in SciDB.
 
 ![image](https://cloud.githubusercontent.com/assets/2708498/21032954/28b62904-bd7b-11e6-886f-971c7e74d768.png)
 
-Starting with 15.12, core SciDB is made aware of the concept of _residency_, that is the set of instances that chunks of an array are persited on. By default, chunks are hash-distributed across all the processes in the cluster, and the residency is said to _include all the instances_. In most cases that is desired to achieve the most parallelism. But here we begin to explore breaking that rule - restricting some or all arrays to reside only a _subset_ of the instances. There are many possible use cases, such as heterogeneous clusters with different storage media (hot and cold data that can be joined together), or, perhaps, limiting which CPU cores will be used to query which arrays.
+Starting with 15.12, core SciDB is made aware of the concept of _residency_, that is the set of instances on which the chunks of an array are stored. By default, chunks are hash-distributed across all the processes in the cluster, and the residency is said to _include all the instances_. In most cases that is desired to achieve the most parallelism. Here we begin to explore breaking that rule - restricting some or all arrays to reside only a _subset_ of the instances. There are many possible use cases, including heterogeneous clusters with different storage media (hot and cold data that can be joined together), or, perhaps, limiting which CPU cores will be used to query which arrays.
 
 The elasticity feature in the Enterprise Edition allows us to do even more interesting workflows, such as:
 
@@ -13,7 +13,7 @@ The elasticity feature in the Enterprise Edition allows us to do even more inter
 4. save the computation result onto the original K instances
 5. detach the "compute" instances and return to the original K
 
-This is particularly attractive in cloud environments: compute nodes can be rented on an hourly basis, only for when they are needed, then discarded. _That's how cloud costs become more economical than in-house storage._ This also implies that any SciDB cluster can be made to 'grow' or 'shrink' as demand changes. Moreover, these steps can be used to remove failed nodes and replace them with new ones, with minimal interruption to query execution. Thus the SciDB cluster becomes a much more fluid entity, able to change dynamically.
+This is particularly attractive in cloud environments: compute servers can be rented on an hourly basis, used only as needed, and then terminated. _That's how cloud costs become much more economical than in-house storage._ This also implies that any SciDB cluster can be made to 'grow' or 'shrink' as demand changes. Moreover, these steps can be used to remove failed servers and replace them with new ones, allowing minimal interruption to query execution. Thus the SciDB cluster becomes a much more fluid entity, able to change dynamically.
 
 This repository contains a small plugin `variable_residency` with a single operator `create_with_residency`. We first discuss the operator, then show an example 'grow, compute, shrink' workflow that is possible with SciDB Enterprise Edition.
 
@@ -21,12 +21,15 @@ This repository contains a small plugin `variable_residency` with a single opera
 
 The plugin installs using [dev_tools](https://github.com/paradigm4/dev_tools) for 15.12 and 16.9. Make sure you use the `v15.12` branch for 15.12
 
-`create_with_residency` is a modified `create array` that allows the user to specify a set of instances. The syntax is as follows:
-`create_with_residency( ARRAY_NAME, SCHEMA, TEMP, INSTANCE0 [, INSTANCE1 [, INSTANCE2,...])` where
+`create_with_residency` is a modified `create array` that allows the user to specify a set of servers or instances. The syntax is as follows:
+`create_with_residency( ARRAY_NAME, SCHEMA, TEMP, 'servers=2,3,..')` or  
+`create_with_residency( ARRAY_NAME, SCHEMA, TEMP, 'instances=1,2,4294967298,..')`
 
 * `ARRAY_NAME` and `SCHEMA` are just as in `create_array`
 * `TEMP` is a boolean flag (true is equivalent to `create temp array`)
-* `INSTANCE0...N` are uint64 instance identifiers as displayed in `list('instances')`
+* `servers=` or `instances=` is a comma-separated list of either server IDs or instance IDs on which the array will reside
+
+Use either `servers=` or `instances=`, but not both. The `servers=` option is a shorthand for extra convenience and will include all instances from the specified servers. When specifying `servers` use the 0-based identifiers corresponding to the `config.ini` file `server-` lines. When specifying `instances` make sure to use identifiers as output by `list('instances')`.
 
 ## Example
 
@@ -36,13 +39,13 @@ $ iquery -aq "op_count(list('instances'))"
 {i} count
 {0} 16
 
-$ iquery -aq "create_with_residency(foo, <val:double>[x=1:40,10,0], false, 3, 4)"
+$ iquery -aq "create_with_residency(foo, <val:double>[x=1:40,10,0], false, 'instances=3, 4')"
 Query was executed successfully
 
 $ iquery -anq "store(build(foo, x), foo)"
 Query was executed successfully
 ```
-The array has 4 10-element chunks. Normally those chunks would land on unique instances in a 16-instance cluster, but in this case we restricted the residency to just 3 and 4. We can use [summarize](https://github.com/paradigm4/summarize) to confirm that, indeed, the residency is reduced:
+The array has 4 10-element chunks. Normally they would land on 4 unique instances, but in this case we restricted the residency to just instances 3 and 4. We can use [summarize](https://github.com/paradigm4/summarize) to confirm that, indeed, the residency is reduced:
 ```bash
 $ iquery -aq "summarize(foo, 'per_instance=1')"
 {inst,attid} att,count,bytes,chunks,min_count,avg_count,max_count,min_bytes,avg_bytes,max_bytes
@@ -77,7 +80,7 @@ $ iquery -aq "summarize(bar, 'per_instance=1')"
 ...
 ```
 
-Most importantly, even though the two arrays differ in residency, SciDB is smart enough to redistribute the data when the arrays need to be colocated for a query:
+Even though the two arrays differ in residency, SciDB is smart enough to redistribute the data when the arrays need to be colocated for a query:
 ```bash
 $ iquery -aq "join(foo,bar)"
 {x} val,val
@@ -95,7 +98,7 @@ $ iquery -aq "join(foo,bar)"
 
 ## Residency Lifetime
 
-At the moment, the residency is associated with an array name at creation time and cannot be mutated. Thus, storing or inserting something into `foo` will not alter its residency:
+At the moment, the residency is associated with an array name at creation time and cannot be altered. Thus, storing or inserting something into `foo` will not change its residency:
 ```bash
 $ iquery -aq "insert(project(apply(between(bar, 1,3), val2, val*10), val2), foo)"
 {x} val
@@ -141,11 +144,11 @@ $ iquery -aq "summarize(foo2, 'per_instance=1')"
 ...
 ```
 
-This implies that all arrays with non-default residency must be created first, before they are inserted into.
+This implies that all arrays with non-default residency must be created first, before they are inserted into. Note that SciDB EE has a `list_array_residency` operator that will output the full residency, not just the stored chunks.
 
 ## Redundancy
 
-If SciDB replication is enabled, the residency supplied to `create_with_residency` must exceed the `redundancy` setting: at least two instances for `redundancy=1`. And since 16.9 makes redundancy machine-level, the instances need to be on different machines.
+If SciDB replication is enabled, the residency supplied to `create_with_residency` must exceed the `redundancy` setting: at least two instances for `redundancy=1`. Since 16.9 redefines redundancy as machine-level, it will further require that the residency span `redundancy+1` servers.
 
 # 2. The grow, compute, shrink workflow (EE only, 15.12 and 16.9)
 
@@ -157,14 +160,14 @@ Query was executed successfully
 
 In this example, we perform the following steps:
 
- 1. start with 1 node, 16 instances
+ 1. start with 1 server, 16 instances
  2. create a test dataset and show a sample query on it
- 3. dynamically attach a second node with 16 more instances
+ 3. dynamically attach a second server with 16 more instances
  4. use all 32 instances to run the query in less time, save the result 
- 5. detach the second node returning to the original 1-node setup
+ 5. detach the second server returning to the original 1-node setup
  6. SciDB remains operational the original dataset and the computed query result are retained as arrays
  
-The example is quite simple on purpose. In practice, you can attach more than one node at once, and the analyses can be much more involved. All the commands run on the initial node 0.
+The example is simple on purpose. In practice, you can attach more than one server at once, and the analyses can be much more involved. All the commands run on the initial server 0.
  
 ## 2.1 Test Data and Query
 
@@ -204,13 +207,13 @@ sys     0m0.006s
 As expected, the values are evenly distributed. 
 
 ## 2.2 What the dynamically attached nodes need
-Attaching another node takes at most 1-2 minutes. It may take some time at first to ensure the second node has all the right packages installed and set up. Luckily, cloud tools lke "saved machine images" allow you to first configure a system and then save it for reuse. Specifically the second node needs the following:
+Attaching another server takes at most 1-2 minutes. It may take some time at first to ensure the machine has all the right packages installed. Luckily, cloud tools lke "saved machine images" allow you to first configure a system and then save it for reuse. Specifically the server needs the following:
 
  * same version of SciDB 
- * all of the same .so plugin files (/opt/scidb/VER/lib/scidb/plugins)
+ * all of the same .so plugin files installed under /opt/scidb/VER/lib/scidb/plugins
  * ssh key for the user `scidb` so that password-less ssh is possible
- * the .pgpass file 
- * same data directory layout as the first node (needs to have some space at least for logs, etc)
+ * the .pgpass file to access the catalog 
+ * same data directory layout as the first nodee (needs to have some space at least for logs, etc)
  
 Ports also to be open between the nodes: 
 
@@ -227,7 +230,7 @@ $ cat config-add-delta.ini
 [mydb]
 server-1 = 10.139.99.10,15
 ```
-Note `server-1` is the "second" server. We are already presumed to be running `server-0`. You may also place `data-dir-prefix` lines in this file to set up multiple disks.
+Note `server-1` is the "second" server. We are already running `server-0`. You may also place `data-dir-prefix` lines in this file to set up multiple disks.
 
 ### 2.3.1 Register new instances
 We use the `config_server` tool to register the new instances with the catalog:
@@ -280,14 +283,14 @@ We start the actual new instance processes like so:
 ```bash
 $ scidb.py -m p4_system start_server -si 1 mydb new_config.ini
 ```
-Note this step uses the `new_config.ini` we created in the previous step. The instances may encounter a hiccup on starting up as they are still not fully registered with the cluster. You can verify that the actual SciDB processes are now running on the second node.
+Note this step uses the `new_config.ini` we created in the previous step. The instances may encounter a hiccup on startup as they are still not fully added to the cluster. You can verify that the SciDB processes are now running on the second node.
 
 ### 2.3.3 Add the new instances to the cluster
 Finally we need to run this query for SciDB to add the newly launched processes to the "cluster membership". Supply all the instance ids as shown in `list_instances()` above:
 ```bash
 $ iquery -aq "add_instances(4294967312, 4294967313, 4294967314, 4294967315, 4294967316, 4294967317, 4294967318, 4294967319, 4294967320, 4294967321, 4294967322, 4294967323, 4294967324, 4294967325, 4294967326, 4294967327)"
 ```
-In case you are curious - the more significant bits are used to store the Server ID - which gives these large integers.
+In case you are curious, the more significant bits are used to store the Server ID, which gives these large integers.
 
 This step may take a minute or so for the instances to "say hello" and recognize each other. You can run this query:
 ```bash
@@ -296,7 +299,7 @@ $ iquery -aq "sync()"
 in a loop and wait for it to return success. That is how you know the cluster is operational. You can also corroborate with `list_instances()` to confirm that all 32 are now in a `member` state. We are now good to go with a two-node cluster!
 
 ## 2.4 Run the computation on the expanded cluster
-Just because we added a node does not mean the data was moved in any way. Our `test_array` still resides only on the first node. You can easily confirm that with `summarize`. However, any _new_ array we create will have 32-instance residency. We can, for example, create a new `temp` array `test_array_shuffle`:
+Just because we added a node does not mean the existing data was moved in any way. Our `test_array` still resides only on the first server. You can easily confirm that with `summarize`. However, any _new_ array we create will have 32-instance residency. We can, for example, create a new `temp` array `test_array_shuffle`:
 ```bash
 $ iquery -aq "create temp array test_array_shuffle <val:double> [i=1:600000000:0:1000000]"
 Query was executed successfully
@@ -332,9 +335,9 @@ real    0m6.872s
 user    0m0.009s
 sys     0m0.004s
 ```
-Quite elastic, in this case. Once again - this grouped aggregate is just an example, consider a more intensive computation that might take hours. 
+Quite scalable in this case. Once again - this query is just an example, consider a more intensive computation that might take hours. 
 
-Did we need to create the temp array copy? Not at all. But we do need to ensure all instances participate in the work, though the array is stored only on 16. Another way to ensure that is to explicitly `redistribute` with the data with the `_sg` or "scatter-gather" operator the start of the query:
+Did we need to create the temp array copy? Not at all. But we do need to ensure all instances participate in the work, though the array is stored only on 16. Another way to ensure that is to explicitly redistribute the array with the `_sg` or "scatter-gather" operator the start of the query:
 ```bash
 iquery -aq "grouped_aggregate( _sg(test_array_shuffle, 1),.. )"
 ```
@@ -343,14 +346,14 @@ Where the `1` argument to `_sg` means "redistribute-by-hash".
 ## 2.5 Save the result
 Knowing the second node won't be around forever, we can save the result with a residency on the first node only. This is where our new operator actually becomes crucial:
 ```bash
-$ iquery -aq "create_with_residency(agg_result, <val:double, count:uint64> [instance_id, value_no], false, 0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15)"
+$ iquery -aq "create_with_residency(agg_result, <val:double, count:uint64> [instance_id, value_no], false, 'servers=0')"
 
 $ iquery -anq "store(grouped_aggregate(test_array_shuffle, count(*), val), agg_result)"
 Query was executed successfully
 ```
 
 ## 2.6 Detach and remove the second node
-We perform the section 2.3 somewhat in reverse. First, remove any temp arrays
+We perform the section 2.3 somewhat in reverse. First, remove our temp array
 ```bash
 $ iquery -aq "remove(test_array_shuffle)"
 ```
@@ -375,7 +378,7 @@ Note that in step 2.3 we created a new config.ini when we added a server and in 
 $ scidb.py -m p4_system service_unregister --all mydb <old_config.ini>
 $ scidb.py -m p4_system service_register --all mydb <new_config.ini> 
 ```
-This has the effect of copying the supplied config.ini file to all nodes under `/opt/scidb/VERSION/service` and using linux tools to automatically restart _that_ config when the OS restarts. For more notes on this, see: https://paradigm4.atlassian.net/wiki/display/SD/Managing+SciDB+Instances
+This has the effect of copying the supplied config.ini file to all nodes under `/opt/scidb/VERSION/service` and using linux tools to automatically restart _that_ config when the OS restarts. For more documentation, see: https://paradigm4.atlassian.net/wiki/display/SD/Managing+SciDB+Instances
 
 ## In Conclusion
 
