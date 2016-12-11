@@ -3,9 +3,9 @@ Prototypes and notes on Variable Array Residency in SciDB.
 
 ![image](https://cloud.githubusercontent.com/assets/2708498/21032954/28b62904-bd7b-11e6-886f-971c7e74d768.png)
 
-Starting with 15.12, core SciDB is made aware of the concept of _residency_, that is the set of instances on which the chunks of an array are stored. By default, chunks are hash-distributed across all the processes in the cluster, and the residency is said to _include all the instances_. In most cases that is desired to achieve the most parallelism. Here we begin to explore breaking that rule - restricting some or all arrays to reside only a _subset_ of the instances. There are many possible use cases, including heterogeneous clusters with different storage media (hot and cold data that can be joined together), or, perhaps, limiting which CPU cores will be used to query which arrays.
+Starting with 15.12, core SciDB is aware of the concept of _residency_, that is the set of instances on which the chunks of an array are stored. By default, chunks are hash-distributed across all the processes in the cluster, and the residency is said to _include all the instances_. In most cases that is desired to achieve the most parallelism. Here we begin to explore breaking that rule - restricting some or all arrays to reside only a _subset_ of the instances. There are many possible use cases, including heterogeneous clusters with different storage media (hot and cold data that can be joined together), or, perhaps, limiting which CPU cores will be used to query which arrays.
 
-The elasticity feature in the Enterprise Edition allows us to do even more interesting workflows, such as:
+The Elasticity feature in the Enterprise Edition allows us to do even more interesting workflows, such as:
 
 1. start with a cluster of K instances
 2. attach M additional "compute" instances
@@ -149,9 +149,9 @@ This implies that all arrays with non-default residency must be created before t
 
 If SciDB replication is enabled, the residency supplied to `create_with_residency` must exceed the `redundancy` setting: at least two instances for `redundancy=1`. Since 16.9 redefines redundancy as server-level, 16.9 will further require that the residency span `redundancy+1` servers. The operator may succeed at creating the array but, if these constraints are not satisfied, storing into the array will not be successful.
 
-# 2. The grow, compute, shrink workflow (EE only, 15.12 and 16.9)
+# 2. The grow, compute, shrink workflow
 
-These steps require the P4 Enterprise Edition, the `system` library in particular:
+These steps work in 15.12 and 16.9 with the P4 Enterprise Edition, the `system` library in particular:
 ```bash
 $ iquery -aq "load_library('system')"
 Query was executed successfully
@@ -352,7 +352,7 @@ Query was executed successfully
 ```
 
 ## 2.6 Detach the second node
-We perform the section 2.3 somewhat in reverse. First, remove our temp array
+Perform the section 2.3 somewhat in reverse. First, remove our temp array
 ```bash
 $ iquery -aq "remove(test_array_shuffle)"
 ```
@@ -380,6 +380,5 @@ $ scidb.py -m p4_system service_register --all mydb <new_config.ini>
 This has the effect of copying the supplied config.ini file to all nodes under `/opt/scidb/VERSION/service` and using Linux "service" tools to automatically restart _that_ config when the OS restarts. For more documentation, see: https://paradigm4.atlassian.net/wiki/display/SD/Managing+SciDB+Instances
 
 ## In Conclusion
-
-CE users can use this prototype to store arrays to specific locations in their cluster. EE users can also grow and shrink their clusters, quickly or slowly, in response to changes in demand. More fine-grained controls over array distributions schemes, such as special small arrays that are copied to every instance, and so on, are quite possible future extensions.
+CE users can use this prototype to store arrays to specific locations in their cluster. EE users can also grow and shrink their clusters, rapidly or over time, in response to changes in demand and compute needs. More fine-grained controls over array distributions schemes, such as special arrays that are copied to every instance, and so on, are quite possible future extensions.
 
