@@ -26,12 +26,18 @@
 #include "log4cxx/logger.h"
 #include <query/Operator.h>
 #include <set>
+#include <boost/algorithm/string.hpp>
+#include <boost/lexical_cast.hpp>
 #include <usr_namespace/Permissions.h>
 #include <NamespacesCommunicatorCopy.h>
 
 #define fail(e) throw USER_EXCEPTION(SCIDB_SE_INFER_SCHEMA,e)
 
 using namespace std;
+using boost::starts_with;
+using boost::lexical_cast;
+using boost::bad_lexical_cast;
+using boost::algorithm::trim;
 
 namespace scidb
 {
@@ -46,16 +52,7 @@ public:
         ADD_PARAM_OUT_ARRAY_NAME()                       // The array name
         ADD_PARAM_SCHEMA()                               // The array schema
         ADD_PARAM_CONSTANT(TID_BOOL);                    // The temporary flag
-        ADD_PARAM_CONSTANT(TID_UINT64);
-        ADD_PARAM_VARIES();
-    }
-
-    vector<std::shared_ptr<OperatorParamPlaceholder> > nextVaryParamPlaceholder(const vector< ArrayDesc> &schemas)
-    {
-        vector<std::shared_ptr<OperatorParamPlaceholder> > res;
-        res.push_back(PARAM_CONSTANT("uint64"));
-        res.push_back(END_OF_VARIES_PARAMS());
-        return res;
+        ADD_PARAM_CONSTANT(TID_STRING);
     }
 
     template<class t> shared_ptr<t>& param(size_t i) const
@@ -92,26 +89,90 @@ public:
                 throw;
             }
         }
-
-        set<InstanceID> instances;
-        for (size_t i = 3, n =_parameters.size(); i<n; ++i)
+        string stringParam = evaluate(((std::shared_ptr<OperatorParamLogicalExpression>&)_parameters[3])->getExpression(), query, TID_STRING).getString();
+        bool listOfServers = true;
+        string paramContents;
+        if(starts_with(stringParam, "servers="))
         {
-            InstanceID instance = evaluate(((std::shared_ptr<OperatorParamLogicalExpression>&)_parameters[i])->getExpression(), query, TID_UINT64).getUint64();
-            if (instances.count(instance) != 0)
-            {
-                ostringstream out;
-                out<<"Instance ID "<<instance<<" specified multiple times.";
-                throw SYSTEM_EXCEPTION(SCIDB_SE_INTERNAL, SCIDB_LE_ILLEGAL_OPERATION) << out.str();
-            }
-            if (query->isPhysicalInstanceDead(instance))
-            {
-                ostringstream out;
-                out<<"Physical Instance ID "<<instance<<" is not currently alive.";
-                throw SYSTEM_EXCEPTION(SCIDB_SE_INTERNAL, SCIDB_LE_ILLEGAL_OPERATION) << out.str();
-            }
-            instances.insert(instance);
+            paramContents = stringParam.substr(string("servers=").size());
         }
-        ArrayResPtr resPtr(new MapArrayResidency(instances.begin(), instances.end()));
+        else if(starts_with(stringParam, "instances="))
+        {
+            listOfServers = false;
+            paramContents = stringParam.substr(string("instances=").size());
+        }
+        else
+        {
+            ostringstream error;
+            error<<"invalid parameter "<<stringParam;
+            throw SYSTEM_EXCEPTION(SCIDB_SE_INTERNAL, SCIDB_LE_ILLEGAL_OPERATION) << error.str().c_str();
+        }
+        trim(paramContents);
+        stringstream ss(paramContents); // Turn the string into a stream.
+        set<uint64_t> givenList;
+        char delimiter=',';
+        string tok;
+        try
+        {
+            while(getline(ss, tok, delimiter))
+            {
+                trim(tok);
+                uint64_t elem = lexical_cast<uint64_t>(tok);
+                if(givenList.count(elem) != 0)
+                {
+                    ostringstream error;
+                    error<<"element "<<elem<<" specified multiple times";
+                    throw SYSTEM_EXCEPTION(SCIDB_SE_INTERNAL, SCIDB_LE_ILLEGAL_OPERATION) << error.str().c_str();
+                }
+                givenList.insert(elem);
+            }
+        }
+        catch (bad_lexical_cast const& exn)
+        {
+            throw SYSTEM_EXCEPTION(SCIDB_SE_INTERNAL, SCIDB_LE_ILLEGAL_OPERATION) << "could not parse instance/server list";
+        }
+        set<InstanceID> residencyInstances;
+        if(listOfServers == false) //user gave us a simple list of instances
+        {
+            for(auto instanceId : givenList)
+            {
+                if (query->isPhysicalInstanceDead(instanceId))
+                {
+                    ostringstream out;
+                    out<<"Physical Instance ID "<<instanceId<<" is not currently alive.";
+                    throw SYSTEM_EXCEPTION(SCIDB_SE_INTERNAL, SCIDB_LE_ILLEGAL_OPERATION) << out.str();
+                }
+                residencyInstances.insert(instanceId);
+            }
+            if(residencyInstances.size()==0)
+            {
+                throw SYSTEM_EXCEPTION(SCIDB_SE_INTERNAL, SCIDB_LE_ILLEGAL_OPERATION) << "no instances specified";
+            }
+        }
+        else //user gave us a list of servers - use all instances from each specified server
+        {
+            Instances clusterInstances;
+            SystemCatalog::getInstance()->getInstances(clusterInstances);
+            for(auto instance : clusterInstances) //for all instances in cluster
+            {
+                if( givenList.count(instance.getServerId()) != 0) //add it if it's on any of the specified servers
+                {
+                    InstanceID instanceId = instance.getInstanceId();
+                    if (query->isPhysicalInstanceDead(instanceId))
+                    {
+                        ostringstream out;
+                        out<<"Physical Instance ID "<<instanceId<<" is not currently alive.";
+                        throw SYSTEM_EXCEPTION(SCIDB_SE_INTERNAL, SCIDB_LE_ILLEGAL_OPERATION) << out.str();
+                    }
+                    residencyInstances.insert(instanceId);
+                }
+            }
+            if(residencyInstances.size()==0)
+            {
+                throw SYSTEM_EXCEPTION(SCIDB_SE_INTERNAL, SCIDB_LE_ILLEGAL_OPERATION) << "no instances specified / invalid server id?";
+            }
+        }
+        ArrayResPtr resPtr(new MapArrayResidency(residencyInstances.begin(), residencyInstances.end()));
         ArrayDesc arrDesc;
         arrDesc.setDistribution(defaultPartitioning());
         arrDesc.setResidency(resPtr);
