@@ -44,7 +44,7 @@ Query was executed successfully
 $ iquery -anq "store(build(foo, x), foo)"
 Query was executed successfully
 ```
-The array has 4 10-element chunks per attribute that would normaly land on 4 different instances. But in this case we restricted the residency to instances 3 and 4. We can use [summarize](https://github.com/paradigm4/summarize) to confirm that, indeed, the residency is not default:
+The array has 4 10-element chunks per attribute that would normally land on 4 different instances. But in this case we restricted the residency to instances 3 and 4. We can use [summarize](https://github.com/paradigm4/summarize) to confirm that, indeed, the residency is not default:
 ```bash
 $ iquery -aq "summarize(foo, 'per_instance=1')"
 {inst,attid} att,count,bytes,chunks,min_count,avg_count,max_count,min_bytes,avg_bytes,max_bytes
