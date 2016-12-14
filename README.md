@@ -1,4 +1,4 @@
-# Elastic Resource Groups
+# Elastic Resource Groups (ERGs)
 Variable Array Residency and Elasticity in SciDB: prototypes and notes
 
 ![image](https://cloud.githubusercontent.com/assets/2708498/21032954/28b62904-bd7b-11e6-886f-971c7e74d768.png)
