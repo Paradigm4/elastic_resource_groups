@@ -218,7 +218,7 @@ Ports also need to be open between the servers:
 
  * 5432 for Postgres 
  * 1239-... for SciDB instances (1239 + number of instances)
- * additional ports for linear algebra
+ * additional ports for linear algebra `gemmm` and `gesvd` operators
  
 Note that many cloud providers have "private network" features that will allow to simply open all ports between the nodes. Postgres may also need to be configured to trust incoming connections from remote IPs. Finally, the `config.ini` file we start with must use the exact IP or hostname - do not use `localhost` or `127.0.0.1` as that will confuse a two-node setup.
 
