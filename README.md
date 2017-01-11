@@ -19,7 +19,11 @@ This repository contains a small plugin `variable_residency` with a single opera
 
 # 1. Operator create_with_residency
 
-The plugin installs using [dev_tools](https://github.com/paradigm4/dev_tools) for 15.12 and 16.9. Make sure you use the `v15.12` branch for 15.12
+The plugin installs using [dev_tools](https://github.com/paradigm4/dev_tools) for 15.12 and 16.9. Make sure you use the `v15.12` branch for 15.12:
+```bash
+$ iquery -aq "install_github('paradigm4/elastic_resource_groups')"
+$ iquery -aq "load_library('elastic_resource_groups')"
+```
 
 `create_with_residency` is a modified `create array` that allows the user to specify the residency as a list of servers or instances. The syntax is:
 `create_with_residency( ARRAY_NAME, SCHEMA, TEMP, 'servers=2,3,..')` where
